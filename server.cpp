@@ -15,19 +15,18 @@
 #define RETRY_INTERVAL 600 // in seconds (10 minutes)
 #define MAX_RETRIES 5
 
+
 std::vector<int> clients;
 std::mutex clients_mutex;
 
-void handle_client(int client_socket) {
+void handle_client(int client_socket) 
+{
     std::cout << "New client connected with socket " << client_socket << std::endl;
 
     // Add the new client to the clients vector
     clients_mutex.lock();
     clients.push_back(client_socket);
     clients_mutex.unlock();
-
-    // Do some work with the client...
-    // For example, receive and send messages using the client socket
 
     // Remove the client from the clients vector
     clients_mutex.lock();
@@ -38,7 +37,8 @@ void handle_client(int client_socket) {
 
     close(client_socket);
 }
-void tcp_server() {
+void tcp_server() 
+{
     // Create the TCP socket
     int server_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (server_socket < 0) {
@@ -107,4 +107,61 @@ void tcp_server() {
         }
         clients_mutex.unlock();
     }
+}
+void udp_server() {
+    // Create the UDP socket
+    int server_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    if (server_socket < 0) 
+    {
+        std::cerr << "Failed to create UDP socket" << std::endl;
+        exit(1);
+    }
+
+    // Set socket options to reuse the address and port
+    int opt = 1;
+    if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt))) 
+    {
+        std::cerr << "Failed to set socket options" << std::endl;
+        exit(1);
+    }
+
+    // Bind the socket to the address and port
+    sockaddr_in address;
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(PORT);
+    if (bind(server_socket, (sockaddr*)&address, sizeof(address)) < 0) 
+    {
+        std::cerr << "Failed to bind UDP socket" << std::endl;
+        exit(1);
+    }
+
+    while (true) 
+    {
+        // Receive a message from any client
+        char buffer[1024] = {0};
+        sockaddr_in client_address;
+        socklen_t client_address_length = sizeof(client_address);
+        int bytes_received = recvfrom(server_socket, buffer, sizeof(buffer), 0, (sockaddr*)&client_address, &client_address_length);
+
+        // Broadcast the message to all clients
+        clients_mutex.lock();
+        for (int client_socket : clients) 
+        {
+            send(client_socket, buffer, bytes_received, 0);
+        }
+        clients_mutex.unlock();
+    }
+}
+
+int main() 
+{
+    // Start the TCP server in a new thread
+    std::thread tcp_thread(tcp_server);
+    tcp_thread.detach();
+
+    // Start the UDP server in the main thread
+    udp_server();
+
+    return 0;
 }
